@@ -1,0 +1,115 @@
+import time
+import board
+import digitalio
+import wifi
+import socketpool
+
+# Wi-Fi credentials
+ssid = "ATTKesF7i2"
+password = "n68vhicgeq8e"
+
+# Function to connect to Wi-Fi
+print("Connecting to Wi-Fi...")
+wifi.radio.connect(ssid, password)
+print(f"Connected to Wi-Fi! IP Address: {wifi.radio.ipv4_address}")
+
+# Create a socket pool
+pool = socketpool.SocketPool(wifi.radio)
+
+# Set up GPIO 0 to GPIO 9 as digital output pins
+leds = [
+    digitalio.DigitalInOut(board.GP0),
+    digitalio.DigitalInOut(board.GP1),
+    digitalio.DigitalInOut(board.GP2),
+    digitalio.DigitalInOut(board.GP3),
+    digitalio.DigitalInOut(board.GP4),
+    digitalio.DigitalInOut(board.GP5),
+    digitalio.DigitalInOut(board.GP6),
+    digitalio.DigitalInOut(board.GP7),
+    digitalio.DigitalInOut(board.GP8),
+    digitalio.DigitalInOut(board.GP9),
+]
+
+# Set GPIO 0 to GPIO 9 as outputs
+for led in leds:
+    led.direction = digitalio.Direction.OUTPUT
+
+# Webpage HTML with buttons for each LED
+html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pico W LED Control</title>
+</head>
+<body>
+    <h1>Control Individual LEDs</h1>
+    <button onclick="toggleLED(0)">Toggle LED 0</button><br>
+    <button onclick="toggleLED(1)">Toggle LED 1</button><br>
+    <button onclick="toggleLED(2)">Toggle LED 2</button><br>
+    <button onclick="toggleLED(3)">Toggle LED 3</button><br>
+    <button onclick="toggleLED(4)">Toggle LED 4</button><br>
+    <button onclick="toggleLED(5)">Toggle LED 5</button><br>
+    <button onclick="toggleLED(6)">Toggle LED 6</button><br>
+    <button onclick="toggleLED(7)">Toggle LED 7</button><br>
+    <button onclick="toggleLED(8)">Toggle LED 8</button><br>
+    <button onclick="toggleLED(9)">Toggle LED 9</button><br>
+
+    <script>
+        function toggleLED(ledNumber) {
+            fetch('/toggle?led=' + ledNumber)
+                .then(response => response.text())
+                .then(data => {
+                    console.log(data);
+                });
+        }
+    </script>
+</body>
+</html>
+"""
+
+# Function to toggle an individual LED
+def toggle_led(led_number):
+    led = leds[led_number]
+    led.value = not led.value  # Toggle the LED state (on/off)
+
+# Create a simple web server to handle HTTP requests
+def serve():
+    addr = wifi.radio.ipv4_address
+    print(f"Serving on http://{addr}")
+    
+    # Listen on port 80
+    with pool.socket(pool.AF_INET, pool.SOCK_STREAM) as s:
+        s.bind(('0.0.0.0', 80))
+        s.listen(1)
+        print("Listening on port 80...")
+
+        while True:
+            conn, addr = s.accept()
+            print(f"Accepted connection from {addr}")
+            
+            with conn:
+                # Read the request
+                buffer = bytearray(1024)
+                size = conn.recv_into(buffer)
+                request_str = str(buffer[:size], 'utf-8')
+                print(f"Request: {request_str}")
+
+                # Check if the request is for the toggle endpoint
+                if "GET /toggle" in request_str:
+                    # Extract the LED number from the request (e.g., ?led=1)
+                    if "?led=" in request_str:
+                        led_number = int(request_str.split("led=")[1].split(" ")[0])
+                        if 0 <= led_number <= 9:
+                            toggle_led(led_number)
+                    
+                    # Send response
+                    response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nToggled LED"
+                    conn.send(response.encode('utf-8'))
+                
+                # Serve the HTML page
+                elif "GET /" in request_str:
+                    response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + html
+                    conn.send(response.encode('utf-8'))
+
+# Main loop to run the web server
+serve()
