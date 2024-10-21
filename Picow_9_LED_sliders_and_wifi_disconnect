@@ -1,0 +1,143 @@
+import time
+import board
+import pwmio
+import wifi
+import socketpool
+
+# Wi-Fi credentials
+ssid = "ATTKesF7i2"
+password = "n68vhicgeq8e"
+
+# Connect to Wi-Fi
+print("Connecting to Wi-Fi...")
+wifi.radio.connect(ssid, password)
+print(f"Connected to Wi-Fi! IP Address: {wifi.radio.ipv4_address}")
+
+# Create a socket pool
+pool = socketpool.SocketPool(wifi.radio)
+
+# Set up PWM on GPIO 0 to GPIO 9
+leds_pwm = [
+    pwmio.PWMOut(board.GP0, frequency=5000, duty_cycle=0),  # GPIO 0
+    pwmio.PWMOut(board.GP1, frequency=5000, duty_cycle=0),  # GPIO 1
+    pwmio.PWMOut(board.GP2, frequency=5000, duty_cycle=0),  # GPIO 2
+    pwmio.PWMOut(board.GP3, frequency=5000, duty_cycle=0),  # GPIO 3
+    pwmio.PWMOut(board.GP4, frequency=5000, duty_cycle=0),  # GPIO 4
+    pwmio.PWMOut(board.GP5, frequency=5000, duty_cycle=0),  # GPIO 5
+    pwmio.PWMOut(board.GP6, frequency=5000, duty_cycle=0),  # GPIO 6
+    pwmio.PWMOut(board.GP7, frequency=5000, duty_cycle=0),  # GPIO 7
+    pwmio.PWMOut(board.GP8, frequency=5000, duty_cycle=0),  # GPIO 8
+    pwmio.PWMOut(board.GP9, frequency=5000, duty_cycle=0),  # GPIO 9
+]
+
+# Webpage HTML with sliders for each GPIO and a disconnect button
+html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pico W GPIO Control</title>
+</head>
+<body>
+    <h1>Control LEDs on GPIO 0-9</h1>
+
+    <h2>Sliders to control each LED:</h2>
+    <p>GPIO 0 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio0" oninput="updateBrightness(0, this.value)"></p>
+    <p>GPIO 1 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio1" oninput="updateBrightness(1, this.value)"></p>
+    <p>GPIO 2 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio2" oninput="updateBrightness(2, this.value)"></p>
+    <p>GPIO 3 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio3" oninput="updateBrightness(3, this.value)"></p>
+    <p>GPIO 4 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio4" oninput="updateBrightness(4, this.value)"></p>
+    <p>GPIO 5 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio5" oninput="updateBrightness(5, this.value)"></p>
+    <p>GPIO 6 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio6" oninput="updateBrightness(6, this.value)"></p>
+    <p>GPIO 7 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio7" oninput="updateBrightness(7, this.value)"></p>
+    <p>GPIO 8 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio8" oninput="updateBrightness(8, this.value)"></p>
+    <p>GPIO 9 Brightness: <input type="range" min="0" max="65535" value="0" id="gpio9" oninput="updateBrightness(9, this.value)"></p>
+
+    <h2>Disconnect from Wi-Fi:</h2>
+    <button onclick="disconnect()">Disconnect from Wi-Fi</button>
+
+    <script>
+        function updateBrightness(gpio, value) {
+            fetch('/set_brightness?gpio=' + gpio + '&value=' + value)
+                .then(response => response.text())
+                .then(data => {
+                    console.log(data);
+                });
+        }
+
+        function disconnect() {
+            fetch('/disconnect')
+                .then(response => response.text())
+                .then(data => {
+                    alert('Disconnected from Wi-Fi');
+                    console.log(data);
+                });
+        }
+    </script>
+</body>
+</html>
+"""
+
+# Function to set PWM duty cycle for a specific GPIO
+def set_brightness(gpio, value):
+    try:
+        brightness_value = int(value)
+        if 0 <= brightness_value <= 65535:
+            leds_pwm[gpio].duty_cycle = brightness_value
+            print(f"Set GPIO {gpio} brightness to: {brightness_value}")
+    except ValueError:
+        print("Invalid brightness value.")
+
+# Function to disconnect from Wi-Fi
+def disconnect_wifi():
+    print("Disconnecting from Wi-Fi...")
+    wifi.radio.disconnect()
+
+# Web server to handle HTTP requests
+def serve():
+    addr = wifi.radio.ipv4_address
+    print(f"Serving on http://{addr}")
+
+    # Listen on port 80
+    with pool.socket(pool.AF_INET, pool.SOCK_STREAM) as s:
+        s.bind(('0.0.0.0', 80))
+        s.listen(1)
+        print("Listening on port 80...")
+
+        while True:
+            conn, addr = s.accept()
+            print(f"Accepted connection from {addr}")
+
+            with conn:
+                # Read the request
+                buffer = bytearray(1024)
+                size = conn.recv_into(buffer)
+                request_str = str(buffer[:size], 'utf-8')
+                print(f"Request: {request_str}")
+
+                # Handle brightness setting
+                if "GET /set_brightness" in request_str:
+                    if "?gpio=" in request_str and "&value=" in request_str:
+                        gpio = int(request_str.split("gpio=")[1].split("&")[0])
+                        value = request_str.split("value=")[1].split(" ")[0]
+                        set_brightness(gpio, value)
+
+                    # Send response
+                    response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nBrightness updated"
+                    conn.send(response.encode('utf-8'))
+
+                # Handle Wi-Fi disconnect request
+                elif "GET /disconnect" in request_str:
+                    disconnect_wifi()
+                    response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nDisconnected from Wi-Fi"
+                    conn.send(response.encode('utf-8'))
+
+                # Serve the HTML page
+                elif "GET /" in request_str:
+                    response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + html
+                    conn.send(response.encode('utf-8'))
+
+# Main loop to run the web server
+serve()
+
+
+
