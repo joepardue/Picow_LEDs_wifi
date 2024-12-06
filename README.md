@@ -1,0 +1,1 @@
+I'm writing an article for this code. I uploaded it here as: 12/6/24 Raspberry Pi Pico W Wifi a Word .docx file. This is actually a living document in Google Docs, but I don't know yet how to link that here. Later maybe?
