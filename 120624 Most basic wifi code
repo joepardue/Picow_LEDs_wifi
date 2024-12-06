@@ -1,0 +1,13 @@
+import wifi
+# secrets.py must be in the picow CIRCUITPY directory for this to work
+from secrets import secrets  # Import the secrets dictionary
+print("SSID: ", secrets["ssid"])
+print("SSID: ", secrets["password"])
+
+print("Connecting to Wi-Fi...")
+try:
+    wifi.radio.connect(secrets["ssid"], secrets["password"])
+    print("Connected to Wi-Fi!")
+    print(f"IP Address: {wifi.radio.ipv4_address}")
+except Exception as e:
+    print(f"Wi-Fi connection failed: {e}")
