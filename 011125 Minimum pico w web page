@@ -1,0 +1,43 @@
+# Minimum pico w web page
+# After lots of problems, this is the simplest pico w web page server I (and by
+# that I mean me and ChatGPT) could get working. Before there were many problems
+# likely from improper shutdowns.
+# Joe Pardue 1/11/25
+
+
+import time
+import board
+import wifi
+import socketpool
+from adafruit_httpserver import Server, Request, Response
+
+# Import Wi-Fi credentials
+from secrets import secrets
+
+# Connect to Wi-Fi
+print("Connecting to Wi-Fi...")
+wifi.radio.connect(secrets["ssid"], secrets["password"])
+print("Connected to Wi-Fi!")
+print("IP address:", wifi.radio.ipv4_address)
+
+# Set up the HTTP server
+pool = socketpool.SocketPool(wifi.radio)
+server = Server(pool, "/static", debug=True)
+
+# Define a route to display "Hello, World!"
+@server.route("/")
+def base(request: Request):
+    return Response(request, "Hello, World!")
+
+# Start the server
+print("Starting server...")
+server.start(str(wifi.radio.ipv4_address), port=80)
+
+# Keep the server running
+while True:
+    try:
+        server.poll()
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(1)
+
