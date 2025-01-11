@@ -1,0 +1,93 @@
+# 011125 Minimum responsive button example
+import time
+import board
+import wifi
+import socketpool
+from adafruit_httpserver import Server, Request, Response
+from secrets import secrets
+
+# Connect to Wi-Fi
+print("Connecting to Wi-Fi...")
+wifi.radio.connect(secrets["ssid"], secrets["password"])
+print("Connected to Wi-Fi!")
+print("IP address:", wifi.radio.ipv4_address)
+
+# Set up the HTTP server
+pool = socketpool.SocketPool(wifi.radio)
+server = Server(pool, "/static", debug=True)
+
+# State variable to track ON/OFF
+device_state = {"power": "OFF"}
+
+# Responsive HTML template
+html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Device Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }}
+        h1 {{
+            font-size: 2em;
+            margin-top: 20px;
+        }}
+        p {{
+            font-size: 1.5em;
+        }}
+        button {{
+            font-size: 1.2em;
+            padding: 10px 20px;
+            margin-top: 20px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+        }}
+        button:hover {{
+            background-color: #0056b3;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Device Control</h1>
+    <p>Current state: {state}</p>
+    <form action="/toggle_power" method="get">
+        <button type="submit">Toggle Power</button>
+    </form>
+</body>
+</html>
+"""
+
+# Serve the main page
+@server.route("/")
+def base(request: Request):
+    # Send HTML with correct MIME type
+    return Response(request, html_template.format(state=device_state["power"]), content_type="text/html")
+
+# Route to toggle the power state
+@server.route("/toggle_power")
+def toggle_power(request: Request):
+    # Toggle the device state
+    device_state["power"] = "ON" if device_state["power"] == "OFF" else "OFF"
+    print(f"Device state toggled to: {device_state['power']}")
+    # Redirect back to the main page
+    return Response(request, html_template.format(state=device_state["power"]), content_type="text/html")
+
+# Start the server
+print("Starting server...")
+server.start(str(wifi.radio.ipv4_address), port=80)
+
+# Keep the server running
+while True:
+    try:
+        server.poll()
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(1)
