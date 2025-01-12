@@ -1,0 +1,138 @@
+# 011125 LED Box Web Control
+
+import time
+import board
+import pwmio
+import wifi
+import socketpool
+from adafruit_httpserver import Server, Request, Response
+from secrets import secrets
+
+# Connect to Wi-Fi
+print("Connecting to Wi-Fi...")
+wifi.radio.connect(secrets["ssid"], secrets["password"])
+print(f"Connected to Wi-Fi! IP Address: {wifi.radio.ipv4_address}")
+
+# Set up the HTTP server
+pool = socketpool.SocketPool(wifi.radio)
+server = Server(pool, "/static", debug=True)
+
+# Set up PWM on GPIO 0 to GPIO 9
+leds_pwm = [
+    pwmio.PWMOut(board.GP0, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP1, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP2, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP3, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP4, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP5, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP6, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP7, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP8, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP9, frequency=5000, duty_cycle=0),
+]
+
+# HTML template for sliders and buttons
+html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pico W GPIO Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }}
+        h1 {{
+            font-size: 1.8em;
+        }}
+        input[type="range"] {{
+            width: 80%;
+        }}
+        button {{
+            font-size: 1.2em;
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+        }}
+        button:hover {{
+            background-color: #0056b3;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Control LEDs on GPIO 0-9</h1>
+    <form>
+        {sliders}
+        <button type="button" onclick="setAllBrightness(65535)">Turn All On</button>
+        <button type="button" onclick="setAllBrightness(0)">Turn All Off</button>
+    </form>
+    <script>
+        function updateBrightness(gpio, value) {{
+            fetch(`/set_brightness?gpio=${{gpio}}&value=${{value}}`)
+                .then(response => response.text())
+                .then(console.log);
+        }}
+        function setAllBrightness(value) {{
+            fetch(`/set_all_brightness?value=${{value}}`)
+                .then(response => response.text())
+                .then(console.log);
+        }}
+    </script>
+</body>
+</html>
+"""
+
+# Generate sliders dynamically
+def generate_sliders():
+    sliders = ""
+    for gpio in range(10):
+        sliders += f'<p>GPIO {gpio}: <input type="range" min="0" max="65535" value="0" onchange="updateBrightness({gpio}, this.value)"></p>'
+    return sliders
+
+# Serve the main page
+@server.route("/")
+def index(request: Request):
+    sliders = generate_sliders()
+    return Response(request, html_template.format(sliders=sliders), content_type="text/html")
+
+# Set brightness for a specific GPIO
+@server.route("/set_brightness")
+def set_brightness(request: Request):
+    gpio = int(request.query_params.get("gpio", -1))
+    value = int(request.query_params.get("value", 0))
+    if 0 <= gpio < len(leds_pwm) and 0 <= value <= 65535:
+        leds_pwm[gpio].duty_cycle = value
+        print(f"Set GPIO {gpio} brightness to {value}")
+        return Response(request, "Brightness updated", content_type="text/plain")
+    return Response(request, "Invalid parameters", content_type="text/plain")
+
+# Set brightness for all GPIOs
+@server.route("/set_all_brightness")
+def set_all_brightness(request: Request):
+    value = int(request.query_params.get("value", 0))
+    if 0 <= value <= 65535:
+        for pwm in leds_pwm:
+            pwm.duty_cycle = value
+        print(f"Set all GPIOs brightness to {value}")
+        return Response(request, "All brightness updated", content_type="text/plain")
+    return Response(request, "Invalid parameters", content_type="text/plain")
+
+# Start the server
+print("Starting server...")
+server.start(str(wifi.radio.ipv4_address), port=80)
+
+# Keep the server running
+while True:
+    try:
+        server.poll()
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(1)
+
