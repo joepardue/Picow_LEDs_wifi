@@ -1,0 +1,44 @@
+# 011225 Picow uses phone access point
+# Joe Pardue 1/12/25
+
+import wifi
+import socketpool
+from phone_secrets import secrets  # Use your phone's hotspot credentials
+
+# Connect to Wi-Fi
+print(f"Connecting to SSID: {secrets['ssid']}")
+wifi.radio.connect(secrets["ssid"], secrets["password"])
+print(f"Connected to {secrets['ssid']} with IP: {wifi.radio.ipv4_address}")
+
+# Create a socket pool and open a socket
+pool = socketpool.SocketPool(wifi.radio)
+server_socket = pool.socket(pool.AF_INET, pool.SOCK_STREAM)
+server_socket.bind(("0.0.0.0", 80))  # Listen on all interfaces, port 80
+server_socket.listen(1)
+print("Server is running and listening on port 80")
+
+while True:
+    try:
+        # Accept a connection
+        client_socket, client_addr = server_socket.accept()
+        print(f"Connection from {client_addr}")
+
+        # Read the request in a CircuitPython-compatible way
+        request = bytearray(1024)  # Buffer for incoming data
+        bytes_read = client_socket.recv_into(request)  # CircuitPython-compatible
+        print("Request received:")
+        print(request[:bytes_read].decode("utf-8"))  # Decode and print the request
+
+        # Send a complete HTTP response
+        http_response = b"""\
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Connection: close
+
+Hello, World!
+"""
+        client_socket.send(http_response)
+        client_socket.close()
+    except Exception as e:
+        print(f"Error: {e}")
+
