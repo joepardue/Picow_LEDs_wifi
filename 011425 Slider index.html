@@ -1,0 +1,150 @@
+# Control Panel Sliders - code.py
+# Joe Pardue 1/14/24
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LED Control Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        .slider-container {
+            margin-bottom: 20px; /* Space below each slider */
+        }
+        .slider-label {
+            margin: 0 0 5px 0; /* Space above and below the label */
+        }
+        .slider {
+            width: 80%;
+            margin: 0 auto; /* Align slider with the label */
+            height: 20px;
+            -webkit-appearance: none;
+            appearance: none;
+            border-radius: 10px;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s ease; /* Smooth gradient change */
+        }
+        .slider::-webkit-slider-thumb {
+            background: var(--thumb-color); /* Thumb matches the LED's color */
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        input[type="text"] {
+            width: 80px;
+            text-align: center;
+            font-size: 1em;
+            margin-left: 10px;
+        }
+        button {
+            font-size: 1.2em;
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>LED Control Panel</h1>
+    <div id="sliders"></div>
+    <button id="toggle-button" onclick="toggleAllSliders()">Set All to Max</button>
+    <button onclick="saveChanges()">Save Changes</button>
+    <script>
+        const sliderContainer = document.getElementById('sliders');
+        let toggleState = 'min'; // Track the current state ('min' or 'max')
+
+        // Fetch initial slider data
+        fetch('/get_sliders')
+            .then(response => response.json())
+            .then(data => {
+                data.forEach((slider, index) => {
+                    const sliderDiv = document.createElement('div');
+                    sliderDiv.className = "slider-container"; // Add class for styling
+                    sliderDiv.innerHTML = `
+                        <p class="slider-label">${slider.name} LED (${slider.wavelength} nm):</p>
+                        <input type="range" min="0" max="65535" value="0" 
+                               class="slider" id="slider-${index}" 
+                               data-color="${slider.rgb}" 
+                               oninput="updateSliderBackground(${index}, this.value)" 
+                               style="background: linear-gradient(to right, lightgrey 100%, ${slider.rgb} 0%); --thumb-color: ${slider.rgb};">
+                        <input type="text" id="input-${index}" value="0" 
+                               onchange="updateSlider(${index}, this.value)">
+                    `;
+                    sliderContainer.appendChild(sliderDiv);
+                });
+            })
+            .catch(error => console.error('Error fetching slider data:', error));
+
+        // Dynamically update slider gradient and thumb color based on value
+        function updateSliderBackground(index, value) {
+            const slider = document.getElementById(`slider-${index}`);
+            const percentage = (value / 65535) * 100; // Calculate percentage
+            const rgb = slider.dataset.color; // Retrieve the LED's RGB value
+            const gradient = `linear-gradient(to right, ${rgb} ${percentage}%, lightgrey ${percentage}%)`;
+
+            slider.style.background = gradient; // Apply the gradient
+            slider.style.setProperty("--thumb-color", rgb); // Update thumb color dynamically
+            document.getElementById(`input-${index}`).value = value; // Update corresponding text box
+        }
+
+        // Update slider when text box changes
+        function updateSlider(index, value) {
+            const slider = document.getElementById(`slider-${index}`);
+            const inputBox = document.getElementById(`input-${index}`);
+            const numericValue = parseInt(value, 10);
+            if (!isNaN(numericValue) && numericValue >= 0 && numericValue <= 65535) {
+                slider.value = numericValue;
+                updateSliderBackground(index, numericValue); // Update gradient dynamically
+            } else {
+                alert("Please enter a value between 0 and 65535.");
+                inputBox.value = slider.value;
+            }
+        }
+
+        // Toggle all sliders between min and max
+        function toggleAllSliders() {
+            const value = toggleState === 'min' ? 65535 : 0; // Determine target value
+            document.querySelectorAll('.slider').forEach((slider, index) => {
+                slider.value = value;
+                updateSliderBackground(index, value); // Update gradient dynamically
+            });
+            // Update toggle state and button text
+            toggleState = toggleState === 'min' ? 'max' : 'min';
+            document.getElementById('toggle-button').innerText = 
+                toggleState === 'min' ? 'Set All to Max' : 'Set All to Min';
+        }
+
+        // Save changes to the server
+        function saveChanges() {
+            const sliders = [];
+            document.querySelectorAll('.slider').forEach((slider, index) => {
+                sliders.push({ value: parseInt(slider.value, 10) });
+            });
+            fetch('/update_sliders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(sliders)
+            })
+            .then(response => response.text())
+            .then(data => console.log(data))
+            .catch(error => console.error('Error saving changes:', error));
+        }
+    </script>
+</body>
+</html>
+
