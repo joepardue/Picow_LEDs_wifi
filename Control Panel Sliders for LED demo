@@ -1,0 +1,93 @@
+# Control Panel Sliders - code.py
+# Joe Pardue 1/14/24
+
+import time
+import json
+import wifi
+import socketpool
+from adafruit_httpserver import Server, Request, Response
+from secrets import secrets
+
+# --- Wi-Fi Connection ---
+print("Connecting to Wi-Fi...")
+wifi.radio.connect(secrets["ssid"], secrets["password"])
+ip_address = str(wifi.radio.ipv4_address)
+print(f"Connected to Wi-Fi! IP Address: {ip_address}")
+print(f"Access the control panel at: http://{ip_address}")
+
+# --- Set Up HTTP Server ---
+pool = socketpool.SocketPool(wifi.radio)
+server = Server(pool)
+
+# --- Slider Data ---
+# Stores the current slider values and metadata
+@server.route("/get_sliders")
+def get_sliders(request: Request):
+    """
+    Returns the current slider data as JSON.
+    """
+    return Response(
+        request,
+        body=json.dumps(sliders),
+        content_type="application/json",
+    )
+sliders = [
+    {"name": "Red", "wavelength": 630, "value": 0, "rgb": "rgb(255, 0, 0)"},
+    {"name": "Orange", "wavelength": 590, "value": 0, "rgb": "rgb(255, 165, 0)"},
+    {"name": "Yellow", "wavelength": 570, "value": 0, "rgb": "rgb(255, 255, 0)"},
+    {"name": "Green", "wavelength": 520, "value": 0, "rgb": "rgb(0, 255, 0)"},
+    {"name": "Cyan", "wavelength": 490, "value": 0, "rgb": "rgb(0, 255, 255)"},
+    {"name": "Blue", "wavelength": 470, "value": 0, "rgb": "rgb(0, 0, 255)"},
+    {"name": "Violet", "wavelength": 400, "value": 0, "rgb": "rgb(138, 43, 226)"},
+]
+
+
+@server.route("/")
+def index(request: Request):
+    """
+    Serves the static HTML page from the root directory.
+    """
+    with open("index.html", "r") as file:
+        html_content = file.read()
+    return Response(request, html_content, content_type="text/html")
+
+@server.route("/update_sliders", methods=["POST"])
+def update_sliders(request: Request):
+    """
+    Updates the slider values based on the incoming JSON payload.
+    """
+    try:
+        # Parse the incoming JSON payload
+        data = json.loads(request.body)
+        for i, slider in enumerate(sliders):
+            slider["value"] = data[i]["value"]
+        print("Updated sliders:", sliders)
+        return Response(request, "Sliders updated successfully", content_type="text/plain")
+    except Exception as e:
+        print("Error updating sliders:", e)
+        return Response(
+            request, "Error updating sliders", content_type="text/plain", status=400
+        )
+
+# --- Serve Static HTML ---
+@server.route("/")
+def index(request: Request):
+    """
+    Serves the static HTML page.
+    """
+    with open("/static/index.html", "r") as file:
+        html_content = file.read()
+    return Response(request, html_content, content_type="text/html")
+
+# --- Start the Server ---
+print("Starting server...")
+server.start(ip_address, port=80)
+
+# --- Keep the Server Running ---
+while True:
+    try:
+        server.poll()
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(1)
+
