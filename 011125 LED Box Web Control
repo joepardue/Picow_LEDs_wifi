@@ -1,134 +1,115 @@
 # 011125 LED Box Web Control
+# Joe Pardue 1/14/25
 
 import time
-import board
-import pwmio
+import json
 import wifi
 import socketpool
+import pwmio
+import board
 from adafruit_httpserver import Server, Request, Response
 from secrets import secrets
 
-# Connect to Wi-Fi
+# Define colors and map them to GPIO pins
+COLOR_GPIO_MAP = {
+    "White": board.GP0,
+    "Warm White": board.GP1,
+    "Pink": board.GP2,
+    "Red": board.GP3,
+    "Orange": board.GP4,
+    "Yellow": board.GP5,
+    "Yellow-Green": board.GP6,
+    "Green": board.GP7,
+    "Blue": board.GP8,
+    "Purple/UV": board.GP9,
+}
+
+# Initialize LEDs
+leds_pwm = {color: pwmio.PWMOut(gpio, frequency=5000, duty_cycle=0) for color, gpio in COLOR_GPIO_MAP.items()}
+
+# Track LED state for toggling
+led_state = False
+
+# Update all LED brightness
+def toggle_all_leds(state):
+    for pwm in leds_pwm.values():
+        pwm.duty_cycle = 65535 if state else 0
+    print("LEDs turned", "on" if state else "off")
+
+# Update individual LED brightness
+def update_led_brightness():
+    for slider in sliders:
+        color = slider["name"]
+        value = slider["value"]
+        if color in leds_pwm:
+            leds_pwm[color].duty_cycle = value
+            print(f"Set {color} LED brightness to {value}")
+
+# --- Wi-Fi Connection ---
 print("Connecting to Wi-Fi...")
 wifi.radio.connect(secrets["ssid"], secrets["password"])
-print(f"Connected to Wi-Fi! IP Address: {wifi.radio.ipv4_address}")
+ip_address = str(wifi.radio.ipv4_address)
+print(f"Connected to Wi-Fi! IP Address: {ip_address}")
+print(f"Access the control panel at: http://{ip_address}")
 
-# Set up the HTTP server
+# --- Set Up HTTP Server ---
 pool = socketpool.SocketPool(wifi.radio)
-server = Server(pool, "/static", debug=True)
+server = Server(pool)
 
-# Set up PWM on GPIO 0 to GPIO 9
-leds_pwm = [
-    pwmio.PWMOut(board.GP0, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP1, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP2, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP3, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP4, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP5, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP6, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP7, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP8, frequency=5000, duty_cycle=0),
-    pwmio.PWMOut(board.GP9, frequency=5000, duty_cycle=0),
+# --- Slider Data ---
+sliders = [
+    {"name": "White", "wavelength": None, "value": 0, "rgb": "rgb(255, 255, 255)"},
+    {"name": "Warm White", "wavelength": None, "value": 0, "rgb": "rgb(255, 244, 229)"},
+    {"name": "Pink", "wavelength": None, "value": 0, "rgb": "rgb(255, 182, 193)"},
+    {"name": "Red", "wavelength": 630, "value": 0, "rgb": "rgb(255, 0, 0)"},
+    {"name": "Orange", "wavelength": 590, "value": 0, "rgb": "rgb(255, 165, 0)"},
+    {"name": "Yellow", "wavelength": 570, "value": 0, "rgb": "rgb(255, 255, 0)"},
+    {"name": "Yellow-Green", "wavelength": 560, "value": 0, "rgb": "rgb(154, 205, 50)"},
+    {"name": "Green", "wavelength": 520, "value": 0, "rgb": "rgb(0, 255, 0)"},
+    {"name": "Blue", "wavelength": 470, "value": 0, "rgb": "rgb(0, 0, 255)"},
+    {"name": "Purple/UV", "wavelength": 400, "value": 0, "rgb": "rgb(138, 43, 226)"},
 ]
 
-# HTML template for sliders and buttons
-html_template = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Pico W GPIO Control</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            text-align: center;
-        }}
-        h1 {{
-            font-size: 1.8em;
-        }}
-        input[type="range"] {{
-            width: 80%;
-        }}
-        button {{
-            font-size: 1.2em;
-            padding: 10px 20px;
-            margin: 10px;
-            border: none;
-            border-radius: 5px;
-            background-color: #007BFF;
-            color: white;
-            cursor: pointer;
-        }}
-        button:hover {{
-            background-color: #0056b3;
-        }}
-    </style>
-</head>
-<body>
-    <h1>Control LEDs on GPIO 0-9</h1>
-    <form>
-        {sliders}
-        <button type="button" onclick="setAllBrightness(65535)">Turn All On</button>
-        <button type="button" onclick="setAllBrightness(0)">Turn All Off</button>
-    </form>
-    <script>
-        function updateBrightness(gpio, value) {{
-            fetch(`/set_brightness?gpio=${{gpio}}&value=${{value}}`)
-                .then(response => response.text())
-                .then(console.log);
-        }}
-        function setAllBrightness(value) {{
-            fetch(`/set_all_brightness?value=${{value}}`)
-                .then(response => response.text())
-                .then(console.log);
-        }}
-    </script>
-</body>
-</html>
-"""
-
-# Generate sliders dynamically
-def generate_sliders():
-    sliders = ""
-    for gpio in range(10):
-        sliders += f'<p>GPIO {gpio}: <input type="range" min="0" max="65535" value="0" onchange="updateBrightness({gpio}, this.value)"></p>'
-    return sliders
-
-# Serve the main page
+# --- Routes ---
 @server.route("/")
 def index(request: Request):
-    sliders = generate_sliders()
-    return Response(request, html_template.format(sliders=sliders), content_type="text/html")
+    with open("index.html", "r") as file:
+        html_content = file.read()
+    return Response(request, html_content, content_type="text/html")
 
-# Set brightness for a specific GPIO
-@server.route("/set_brightness")
-def set_brightness(request: Request):
-    gpio = int(request.query_params.get("gpio", -1))
-    value = int(request.query_params.get("value", 0))
-    if 0 <= gpio < len(leds_pwm) and 0 <= value <= 65535:
-        leds_pwm[gpio].duty_cycle = value
-        print(f"Set GPIO {gpio} brightness to {value}")
-        return Response(request, "Brightness updated", content_type="text/plain")
-    return Response(request, "Invalid parameters", content_type="text/plain")
+@server.route("/get_sliders")
+def get_sliders(request: Request):
+    return Response(request, body=json.dumps(sliders), content_type="application/json")
 
-# Set brightness for all GPIOs
-@server.route("/set_all_brightness")
-def set_all_brightness(request: Request):
-    value = int(request.query_params.get("value", 0))
-    if 0 <= value <= 65535:
-        for pwm in leds_pwm:
-            pwm.duty_cycle = value
-        print(f"Set all GPIOs brightness to {value}")
-        return Response(request, "All brightness updated", content_type="text/plain")
-    return Response(request, "Invalid parameters", content_type="text/plain")
+@server.route("/update_sliders", methods=["POST"])
+def update_sliders(request: Request):
+    global led_state
+    try:
+        data = json.loads(request.body)
+        for i, slider in enumerate(sliders):
+            sliders[i]["value"] = data[i]["value"]
+        update_led_brightness()
+        return Response(request, "Sliders updated successfully", content_type="text/plain")
+    except Exception as e:
+        print("Error updating sliders:", e)
+        return Response(request, "Error updating sliders", content_type="text/plain", status=400)
 
-# Start the server
+@server.route("/toggle_leds", methods=["POST"])
+def toggle_leds(request: Request):
+    global led_state
+    try:
+        led_state = not led_state
+        toggle_all_leds(led_state)
+        return Response(request, "LEDs toggled successfully", content_type="text/plain")
+    except Exception as e:
+        print("Error toggling LEDs:", e)
+        return Response(request, "Error toggling LEDs", content_type="text/plain", status=400)
+
+# --- Start the Server ---
 print("Starting server...")
-server.start(str(wifi.radio.ipv4_address), port=80)
+server.start(ip_address, port=80)
 
-# Keep the server running
+# --- Keep the Server Running ---
 while True:
     try:
         server.poll()
