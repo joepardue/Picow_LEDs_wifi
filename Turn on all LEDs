@@ -1,0 +1,30 @@
+# Turn on all LEDs
+# Joe Pardue 1/15/25
+import time
+import pwmio
+import board
+
+# Set up PWM on GPIO pins connected to LEDs
+leds_pwm = [
+    pwmio.PWMOut(board.GP0, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP1, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP2, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP3, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP4, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP5, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP6, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP7, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP8, frequency=5000, duty_cycle=0),
+    pwmio.PWMOut(board.GP9, frequency=5000, duty_cycle=0),
+]
+
+# Set all LEDs to maximum brightness
+for pwm in leds_pwm:
+    pwm.duty_cycle = 65535  # Maximum brightness
+
+print("All LEDs are set to maximum brightness.")
+
+# Keep running to maintain PWM
+while True:
+    time.sleep(1)
+
