@@ -1,0 +1,111 @@
+import time
+import json
+import wifi
+import socketpool
+import pwmio
+import board
+from adafruit_httpserver import Server, Request, Response
+from secrets import secrets
+
+# Define colors and map them to GPIO pins
+COLOR_GPIO_MAP = {
+    "White": board.GP0,
+    "Warm White": board.GP1,
+    "Pink": board.GP2,
+    "Red": board.GP3,
+    "Orange": board.GP4,
+    "Yellow": board.GP5,
+    "Yellow-Green": board.GP6,
+    "Green": board.GP7,
+    "Blue": board.GP8,
+    "Purple/UV": board.GP9,
+}
+
+# Initialize LEDs
+leds_pwm = {color: pwmio.PWMOut(gpio, frequency=5000, duty_cycle=0) for color, gpio in COLOR_GPIO_MAP.items()}
+
+# Update individual LED brightness
+def update_led_brightness(data):
+    try:
+        for slider in data:
+            color = slider["name"]
+            value = slider["value"]
+            if color in leds_pwm:
+                leds_pwm[color].duty_cycle = int(value * 655.35)  # Scale 0-100 to PWM duty cycle
+                print(f"Set {color} LED brightness to {value}")
+    except Exception as e:
+        print(f"Error updating LED brightness: {e}")
+
+# --- Wi-Fi Connection ---
+print("Connecting to Wi-Fi...")
+wifi.radio.connect(secrets["ssid"], secrets["password"])
+ip_address = str(wifi.radio.ipv4_address)
+print(f"Connected to Wi-Fi! IP Address: {ip_address}")
+print(f"Access the control panel at: http://{ip_address}")
+
+# --- Set Up HTTP Server ---
+pool = socketpool.SocketPool(wifi.radio)
+server = Server(pool)
+
+# --- Slider Data ---
+sliders = [
+    {"name": "White", "wavelength": None, "value": 0, "rgb": "rgb(255, 255, 255)"},
+    {"name": "Warm White", "wavelength": None, "value": 0, "rgb": "rgb(255, 244, 229)"},
+    {"name": "Pink", "wavelength": None, "value": 0, "rgb": "rgb(255, 182, 193)"},
+    {"name": "Red", "wavelength": 630, "value": 0, "rgb": "rgb(255, 0, 0)"},
+    {"name": "Orange", "wavelength": 590, "value": 0, "rgb": "rgb(255, 165, 0)"},
+    {"name": "Yellow", "wavelength": 570, "value": 0, "rgb": "rgb(255, 255, 0)"},
+    {"name": "Yellow-Green", "wavelength": 560, "value": 0, "rgb": "rgb(154, 205, 50)"},
+    {"name": "Green", "wavelength": 520, "value": 0, "rgb": "rgb(0, 255, 0)"},
+    {"name": "Blue", "wavelength": 470, "value": 0, "rgb": "rgb(0, 0, 255)"},
+    {"name": "Purple/UV", "wavelength": 400, "value": 0, "rgb": "rgb(138, 43, 226)"},
+]
+
+# --- Routes ---
+@server.route("/")
+def index(request: Request):
+    try:
+        with open("/static/index.html", "r") as file:
+            html_content = file.read()
+        return Response(request, html_content, content_type="text/html")
+    except Exception as e:
+        print("Error serving index.html:", e)
+        return Response(request, "File Not Found", status=404)
+
+@server.route("/get_sliders")
+def get_sliders(request: Request):
+    return Response(request, body=json.dumps(sliders), content_type="application/json")
+
+@server.route("/save_sliders", methods=["POST"])
+def save_sliders(request: Request):
+    try:
+        data = json.loads(request.body)
+        update_led_brightness(data)
+        return Response(request, "Sliders saved successfully", content_type="text/plain")
+    except Exception as e:
+        print("Error saving sliders:", e)
+        return Response(request, "Error saving sliders", content_type="text/plain", status=400)
+
+@server.route("/toggle_leds", methods=["POST"])
+def toggle_leds(request: Request):
+    try:
+        for pwm in leds_pwm.values():
+            pwm.duty_cycle = 65535 if pwm.duty_cycle == 0 else 0
+        print("All LEDs toggled")
+        return Response(request, "LEDs toggled successfully", content_type="text/plain")
+    except Exception as e:
+        print("Error toggling LEDs:", e)
+        return Response(request, "Error toggling LEDs", content_type="text/plain", status=400)
+
+# --- Start the Server ---
+print("Starting server...")
+server.start(ip_address, port=80)
+
+# --- Keep the Server Running ---
+while True:
+    try:
+        server.poll()
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(1)
+
