@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LED Control Panel</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css">
+    <style>
+        .slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            background: linear-gradient(to right, var(--slider-color) 0%, #ddd 100%);
+            outline: none;
+            transition: background 0.3s;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: var(--slider-color);
+            cursor: pointer;
+        }
+
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: var(--slider-color);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container my-4">
+        <h1 class="text-center mb-4">LED Control Panel</h1>
+        <div id="sliders" class="row"></div>
+        <div class="d-flex justify-content-between mt-3">
+            <button id="saveButton" class="btn btn-success flex-grow-1 me-2">Save</button>
+            <button id="toggleButton" class="btn btn-primary flex-grow-1">Toggle</button>
+        </div>
+    </div>
+
+    <script>
+        let slidersData = [];
+        let isMax = false; // Tracks toggle state: false = min, true = max
+
+        async function fetchSliders() {
+            const response = await fetch('/get_sliders');
+            slidersData = await response.json();
+            const container = document.getElementById('sliders');
+            container.innerHTML = '';
+            slidersData.forEach((slider, index) => {
+                const sliderHtml = `
+                    <div class="col-12 mb-3">
+                        <label class="form-label">${slider.name} (${slider.wavelength || 'N/A'}nm)</label>
+                        <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            value="${slider.value}" 
+                            class="slider form-range" 
+                            style="--slider-color: ${slider.rgb}" 
+                            data-index="${index}">
+                    </div>`;
+                container.innerHTML += sliderHtml;
+            });
+
+            document.querySelectorAll('.slider').forEach(input => {
+                input.addEventListener('input', event => {
+                    const index = event.target.dataset.index;
+                    slidersData[index].value = parseInt(event.target.value, 10);
+                    updateSliderBackground(event.target);
+                });
+                updateSliderBackground(input); // Ensure background is updated on load
+            });
+        }
+
+        function updateSliderBackground(input) {
+            const value = input.value;
+            const color = input.style.getPropertyValue('--slider-color');
+            input.style.background = `linear-gradient(to right, ${color} 0%, ${color} ${value}%, #ddd ${value}%, #ddd 100%)`;
+        }
+
+        async function saveSliders() {
+            try {
+                const response = await fetch('/save_sliders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(slidersData),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                console.log('Settings saved successfully!');
+            } catch (error) {
+                console.error('Error saving sliders:', error);
+            }
+        }
+
+        async function toggleLEDs() {
+            isMax = !isMax; // Toggle between max and min states
+            slidersData.forEach(slider => {
+                slider.value = isMax ? 100 : 0; // Set all sliders to max or min
+            });
+
+            document.querySelectorAll('.slider').forEach(input => {
+                input.value = isMax ? 100 : 0; // Move sliders visually
+                updateSliderBackground(input); // Update slider background
+            });
+
+            // Save the updated slider values to synchronize LEDs
+            await saveSliders();
+        }
+
+        document.getElementById('saveButton').addEventListener('click', saveSliders);
+        document.getElementById('toggleButton').addEventListener('click', toggleLEDs);
+
+        fetchSliders();
+    </script>
+</body>
+</html>
+
