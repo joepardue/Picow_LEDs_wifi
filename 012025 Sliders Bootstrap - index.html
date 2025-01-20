@@ -57,8 +57,11 @@
             container.innerHTML = '';
             slidersData.forEach((slider, index) => {
                 const sliderHtml = `
-                    <div class="col-12 mb-3">
-                        <label class="form-label">${slider.name} (${slider.wavelength || 'N/A'}nm)</label>
+                    <div class="col-12 mb-4">
+                        <div class="d-flex justify-content-between mb-1">
+                            <label class="form-label">${slider.name} (${slider.wavelength || 'N/A'}nm)</label>
+                            <div id="sliderValue-${index}" class="text-end">${Math.round(slider.value * 655.35)}</div>
+                        </div>
                         <input 
                             type="range" 
                             min="0" 
@@ -76,8 +79,10 @@
                     const index = event.target.dataset.index;
                     slidersData[index].value = parseInt(event.target.value, 10);
                     updateSliderBackground(event.target);
+                    updateSliderValue(index, event.target.value);
                 });
                 updateSliderBackground(input); // Ensure background is updated on load
+                updateSliderValue(input.dataset.index, input.value); // Ensure value box is updated on load
             });
         }
 
@@ -85,6 +90,14 @@
             const value = input.value;
             const color = input.style.getPropertyValue('--slider-color');
             input.style.background = `linear-gradient(to right, ${color} 0%, ${color} ${value}%, #ddd ${value}%, #ddd 100%)`;
+        }
+
+        function updateSliderValue(index, value) {
+            const relativeValue = Math.round(value * 655.35);
+            const valueBox = document.getElementById(`sliderValue-${index}`);
+            if (valueBox) {
+                valueBox.textContent = relativeValue;
+            }
         }
 
         async function saveSliders() {
@@ -114,6 +127,7 @@
             document.querySelectorAll('.slider').forEach(input => {
                 input.value = isMax ? 100 : 0; // Move sliders visually
                 updateSliderBackground(input); // Update slider background
+                updateSliderValue(input.dataset.index, input.value); // Update value boxes
             });
 
             // Save the updated slider values to synchronize LEDs
